@@ -1,0 +1,95 @@
+#!/bin/bash
+# script : gen_sdb.shl
+# purpose: Generate a quick test Sqlite table like 'gi_taxid_nucl' where
+#          the input data is artificially generated on the fly.
+#          Each randomly chosen byte, valued at {0..255}, represents one record
+# revised: 2018-11-19T14:07, added OUTPUT_DB option, minor doc updates only.
+# revised: 2017-12-05T15:04, minor updates.
+# revised: 2017-11-29T15:06
+# author : Joe Glassy
+# invocation: ./gen_sdb.shl <nElem{10}> <outputDatabase>
+#           where default nElem = 10.
+# notes  : Difference between /dev/random and /dev/urandom is:
+#         1)/dev/random uses an entropy pool, is blocking, will typically
+#            wait until sufficient kernel activity occurs.
+#         2) /dev/urandom is non-blocking, somewhat less "purely" random than /dev/random
+# Example using /dev/random:                
+#  Create a file containing (32) random bytes:  head -c 32 /dev/urandom > random32.bytes
+#  Python snippet to decode raw binary file into integers representing ASCII ordering:
+#   import struct
+#   rawData= open('random32.bytes','rb').read() ; lisInt=[ord(c) for c in rawData]
+#   print lisInt
+# Single command line version for Bash script
+# python -c "import struct; rawDta=open('random32.bytes','rb').read(); rawLis=[ord(c) for c in rawDta]; print rawLis;"
+# [167, 26, 230, 55, 201, 142, 237, 28, 193, 227, 147, 195, 86, 228, 17, 193, 65, 59, 101, 228, 133, 88, 250, 89, 220, 170, 54, 200, 198, 114, 24, 164]
+#  python -c $'import sys\nfor r in range(10): print("rob")'
+# EXAMPLE: note use of logical OR in sed expression and use of extended -E sed semantics here
+#  python -c "import struct; rawDta=open('random32.bytes','rb').read();rawLis=[ord(c) for c in rawDta];print repr(rawLis);" | sed -E -e 's/(\[|\])//g'
+# EXAMPLE: note final conversion to vertical CSV style list, via 2nd sed expression
+#  python -c "import struct; rawDta=open('random32.bytes','rb').read();rawLis=[ord(c) for c in rawDta];print repr(rawLis);" | sed -E -e 's/(\[|\])//g' | sed 's/, /\n/g'
+#
+# Other Misc Methods, for gen random sequence etc.
+# MIN=0
+# MAX=1234567890
+# while
+#   rnd=$(cat /dev/urandom | tr -dc 0-9 | fold -w${#MAX} | head -1 | sed 's/^0*//;')
+#   [ -z $rnd ] && rnd=0
+#   (( $rnd < $MIN || $rnd > $MAX ))
+# do :
+# done
+#
+# Example of single-line for loop in Bash --> for ((a=1; a <= 1000; a++)) do echo $a done ;
+# 
+# Example: reminder on how to reference script name itself and related args
+# echo "# arguments called with ---->  ${@}     "
+# echo "# \$1 ---------------------->  $1       "
+# echo "# \$2 ---------------------->  $2       "
+# echo "# path to me --------------->  ${0}     "
+# echo "# parent path -------------->  ${0%/*}  "
+# echo "# my name ------------------>  ${0##*/} "
+#
+# Default output database is initialized here
+OUTPUT_DB=test_gi.sqlite
+# Default sample size is 32.
+SAMPLE_SIZ=32
+# Default n. of random (seed) bytes is 64
+N_ELEM=64
+# Retrieve optional user-override parameters
+if [ $# -ge 1 ] ; then
+ N_ELEM=$1
+fi
+if [ $# -ge 2 ] ; then
+ SAMPLE_SIZ=$2
+fi
+if [ $# -ge 3 ] ; then
+ OUTPUT_DB=$3
+fi
+
+echo "Task: " ${0##*/} " testing " $N_ELEM " repetitions starting at " `date` ' on host ' `hostname` 
+echo "Sample size: " $SAMPLE_SIZ " records generated for new output database: " $OUTPUT_DB
+#
+# 1) generate a N_ELEM bytes (record) dataset
+# Generate K=N_ELEM random bytes, then convert each to its ASCII ordinal (integer) equivalent {0..255}.
+head -c $N_ELEM /dev/urandom > random.bytes
+# Note: the sed expressions eliminate the '[' and ']' from the list output, then convert
+# the horizontal list output into a vertical (newline delimited) list
+python -c "import struct; rawDta=open('random.bytes','rb').read();rawLis=[ord(c) for c in rawDta];print repr(rawLis);" | sed -E -e 's/(\[|\])//g' | sed 's/, /\n/g' > rnd_input.csv
+seq 1 $N_ELEM > test_seq_input.csv
+# Consolidate both lists into one CSV, using a "," delimiter
+paste -d, test_seq_input.csv rnd_input.csv > testsdb_input.csv
+# cat testsdb_input.csv
+# REMOVE ANY PRIOR instance of test sqlite database
+if [ -f test_gi.sqlite ] ; then
+ echo "Removing prior instance of test_gi.sqlite"
+ rm test_gi.sqlite
+fi
+# EXAMPLE: create a simple gi_taxid_nucl table and populate it
+echo "CREATE TABLE gi_taxid_nucl (gi integer PRIMARY KEY, tax_id integer);" | sqlite3 $OUTPUT_DB
+echo -e '.separator ","\n.import testsdb_input.csv gi_taxid_nucl\n'| sqlite3 $OUTPUT_DB
+echo "Verifying initial " $SAMPLE_SIZ " records now"
+echo "SELECT gi,tax_id FROM gi_taxid_nucl WHERE gi <= $SAMPLE_SIZ;" | sqlite3 $OUTPUT_DB
+#
+echo "Task " ${0} " completed " `date`
+# Housekeeping, clean up
+rm -f test_seq_input.csv rnd_input.csv random.bytes
+#
