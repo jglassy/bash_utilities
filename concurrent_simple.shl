@@ -1,0 +1,54 @@
+#!/bin/bash
+# script : concurrent_simple.shl
+# invocation: ./concurrent_simple.shl 
+# example   : ./concurrent_simple.shl
+# dependencies: n/a
+# revised: 2018-11-19T14:21
+# revised: 2018-07-23T16:04
+# purpose: Illustrates simple Bash concurrency "wait" command, by calculating the 
+#          checksum and block count from a set of "concurrent*.dat" files.
+# notes  : Defaults are to create (16) files, each with 1000 elements, processed via (4) CPUs.
+# notes  : GIT, uploaded to the new repo, https://github.com/jglassy Bash repository
+# -----------------------------------------------------------
+N_FILES=16
+N_ELEM=1000
+N_CPUS=4
+# Define name of single output file storing the labelled sum(s) of single column values from N_FILES
+RESULT_PATH=concurrent_simple.out
+#
+echo "task " $0 " started   at: " `date`
+if [ -f $RESULT_PATH ] ; then
+  rm -f $RESULT_PATH
+fi
+touch $RESULT_PATH
+
+# first, create (k) test data input files, each with N_ELEM values
+echo "creating test input data for " $N_FILES " files each storing " $N_ELEM " values"
+for ((ithFile=0;ithFile<$N_FILES;ithFile++))
+  do
+  	TEST_PATH="concurrent_simple_testdata_"$ithFile.dat
+  	shuf -i 1-10000 -n $N_ELEM > $TEST_PATH
+  done
+# Populate an array, taskTargets, via a wildcard list of test input data files
+declare taskTargets=(`ls concurrent_simple*.dat`)
+
+ithJob=0
+echo " "
+for thisInput in ${taskTargets[*]}
+do
+	((ithJob+=1))
+	valueSum=`awk '{s+=$1} END {printf "%.0f", s}' $thisInput`
+	# calculate checksum and block count of each file
+	result_sum=`sum $thisInput`
+	echo "output for input: " $thisInput " sum : " $valueSum " checksum: " $result_sum >> $RESULT_PATH
+    if (( $ithJob % $N_CPUS == 0 )) ; then
+      echo "waited for current cohort of jobs to complete!"
+      wait
+     fi
+done
+# clean up
+rm -f concurrent_simple*.dat
+# display results
+# cat $RESULT_PATH
+# report completion status
+echo "task " $0 " completed at: " `date`
