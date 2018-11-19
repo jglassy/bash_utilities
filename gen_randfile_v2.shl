@@ -1,0 +1,133 @@
+#!/bin/bash
+# purpose: generate a text file containing N random values and dummy column(s)
+# revised: 2018i-11-19T14:02
+# revised: 2017-10-31T17:53
+# author : Joe Glassy
+# invocation: ./gen_randfile_v2.shl <nValues> <optionalOutput_file>
+# platform: Linux platform (CentOS,Redhat,Ubuntu,Mint,OpenSUSE,etc) support only.
+# notes  : Uses 'shuf' as in these examples:
+#          Randomly re-order an existing text file, my.txt  
+#            shuf my.txt
+#          Select (1) randomly chosen line from existing file, cards.txt
+#            shuf -n 1 cards.txt
+#          Select 52 randomly chosen lines from file
+#            shuf -n 52 cards.txt
+#          Shuffle standard input:  shuf -e one two three
+#          Generate a random number between 1 and 10:
+#            $(( ( RANDOM % 10 )  + 1 ))
+#          <OR>  echo $RANDOM % 10 + 1 | bc
+#          <OR> while :; do ran=$RANDOM; ((ran < 32760)) && echo $(((ran%10)+1)) && break; done 
+#          echo $RANDOM % 10 + 1 | bc
+#
+#     Generate a random alphanumeric 32 character string, iterate 3 times
+#          cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 3
+#
+#     Function literal to generate one alphanumeric 32 char string
+# function gen-string()
+# {
+#    cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w ${1:-32} | head -n 1
+# }
+# NEW_UUID_MORE_CHARACTERS=$(cat /dev/urandom | tr -dc "a-zA-Z0-9!@#$%^&*()_+?><~\`;'" | fold -w 32 | head -n 1)
+# echo $NEW_UUID_MORE_CHARACTERS
+#     Generate a random value between 0 and 9
+#          grep -m1 -ao '[0-9]' /dev/urandom | sed s/0/10/ | head -n1
+#     Generate (3) random values between 0 and 9
+#          grep -m1 -ao '[0-9]' /dev/urandom | sed s/0/10/ | head -n3
+#     Generate x=1 random values between 40 and 49:
+#          r=$(( $RANDOM % 10 + 40 )); echo $r
+# Example: loop through alphabet
+# for x in {a..z}
+# do
+#     echo "$x"
+#     mkdir -p path2/${x}
+#     mv path1/${x}*.ext path2/${x}
+# done
+#
+# END=5
+# for ((i=1;i<=END;i++)); do
+#     echo $i
+# done
+#
+# OR, example using formatted printf (sloppy, could have used "%-2.2d"
+# for ((i=7;i<=12;i++)); do echo `printf "%2.0d\n" $i |sed "s/ /0/"`;done
+#
+# Example: for ((i=7;i<=12;i++)); do echo `printf "%-2.2d\n" $i` ; done
+# OR, using xargs, try this:     seq 1 $END | xargs -I {} echo {}
+#
+# OR, example..
+# typeset -i i END # Let's be explicit
+# for ((i=1;i<=END;++i)); do echo $i; done
+# OR, POSIX style loop
+# i=2
+# end=5
+# while [ $i -le $end ]; do
+#    echo $i
+#     i=$(($i+1))
+# done
+# OR, another way, using 'seq':
+# for i in $(seq $END); do echo $i; done
+#
+N_VALUES=10
+LO_LIM=1
+HI_LIM=1000
+OUTPUT_PATH=sample_data.txt
+USE_STYLE='CSV'
+#
+
+function gen_string(){
+   echo `cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w ${1:-32} | head -n 1`
+}
+
+function gen_code(){
+   echo `cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w ${1:-$1} | head -n 1`
+}
+
+function gen_randm(){
+   rndrtn=$(( ( RANDOM % $HI_LIM ) + $LO_LIM ))
+}
+
+# Accept optional custom user inputs: <Count> <OutputPath>
+if [ $# -ge 1 ] ; then
+ N_VALUES=$1
+fi
+if [ $# -ge 2 ] ; then
+ OUTPUT_PATH=$2
+fi
+
+# 
+# Create an empty output file, but only if it doesn't already exist.
+# If it exists, delete it first.
+if [ -f $OUTPUT_PATH ] ; then
+   rm -f $OUTPUT_PATH
+fi
+touch $OUTPUT_PATH
+
+echo 
+echo 'task: gen_randfile started ' `date` ' on host ' `hostname`
+echo 'Generating ' $N_VALUES ' formatted using style: '  $USE_STYLE
+echo 'with output sent to: ' $OUTPUT_PATH
+
+for ((i=1;i<=$N_VALUES;++i));
+ do 
+   # These random string generation functions return a string of 
+   # length 6, 12, or 24 via a simple 'echo'
+   a1=`gen_code 6`
+   a2=`gen_code 12`
+   a3=`gen_code 24`
+   # Generate random value between low limit and high limit, inclusive
+   r1=$(( ( RANDOM % $HI_LIM ) + LO_LIM ))
+   r2=$(( ( RANDOM % $HI_LIM ) + LO_LIM ))
+   # The function 'gen_randm' also generates a random value, returned in 'rndrtn'
+   gen_randm 
+   r3=$rndrtn
+   
+   if [ USE_STYLE = 'FIXED' ] ; then
+       # Fixed space output style (no commas)  
+       printf "ID %4d %s %5d %s %d %s\n" $i $a1 $r1 $a2 $r3 $a3
+   else
+       # Comma Separated Value CSV style
+       printf "ID%4.4d,%s,%d,%s,%d,%s\n" $i $a1 $r1 $a2 $r3 $a3 >> $OUTPUT_PATH
+   fi   
+ done
+echo 'Task completed at ' `date`
+# fine
