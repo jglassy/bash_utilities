@@ -1,0 +1,185 @@
+#!/bin/bash
+# revised: 2019-04-09T18:08:00,MST (note ISO8601 datetime compliant <parseable> format)
+# revised: 2019-03-28T17:12:00
+# revised: 2018-01-17T10:43:00
+# invocation: ./gen_randdata.shl <nFiles> <nLinesPerFile> <nRandonChWidth> FORCE_RANDOM_REC_INDICES {MaterialPath.txt}
+# example:    ./gen_randdata.shl  1 10000 64 OK ./material_choices.txt
+# example:    ./gen_randdata.shl  5 100   32 1 
+# example:    ./gen_randdata.shl  5 100   32 YES
+# example:    ./gen_randdata.shl  4 72    1
+# example:    ./gen_randdata.shl  2 12
+# context: Output is useful to test-populate SQL tables of various design as an aid to
+#          normalization and query development.
+# author : joe glassy
+# purpose: Using Bash v4.x, generate test data CSV file(s) containing (K=5) fields, comprised of 
+#          random information, or a mix of information randomly chosen from a seed text file
+#          of strings. The format of the output comma delimited text file(s) are:
+#          {integer,timestampString,randomString,integer,integer}
+#          Examples of comma delimited output text:
+#             11117,2019-03-28T173549,R2bf41qh,00020714,624
+#          where 'randomString' may also have been chosen from a seed file of strings if a
+#          seed text file (<material_choices.txt>) was specified.
+# limitations: Bash must be version 4.x
+# notes  : Postprocess using "cut", extract 1st,3rd fields only:
+#          1st,3rd    :               cut -d, -f 1,3 Testdata_00000001.csv
+#          1st,3rd,5th:               cut -d, -f 1,3,5 Testdata_00000001.csv
+#          1st,3rd THROUGH 5th field: cut -d, -f 1,3-5 Testdata_00000001.csv
+# notes: Use awk to retrieve just 1st,3rd fields:  awk 'BEGIN{FS=","} {print $1,$3}'  Testdata_00000001.csv
+# notes: <verify> All of these SHOULD be equivalent and for an will return 1 for a sample input "1:2:3":
+# $ awk -F: '{print $1}' <<< "1:2:3"
+# $ awk -v FS=: '{print $1}' <<< "1:2:3"
+# $ awk '{print $1}' FS=: <<< "1:2:3"
+# $ awk 'BEGIN{FS=":"} {print $1}' <<< "1:2:3"
+# 
+# notes  : Further parameterized via optional N_RNDCHAR param as the width of generated strings,
+# notes  : and adapted to produce random record indices when the default no. of files
+#          was not changed by the user via a command line argument, or is 1
+# notes  : Other misc methods: Use 'pwgen' utility as in: pwgen -s 13 7
+#          head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo ''
+#          openssl rand -base64 12   ..or.. STRING_OF_32CH=`openssl rand -base64 32`
+# notes  : To create a random number between 1 and 10,use echo $((1 + RANDOM % 10))
+#          although the upper limit of RANDOM is typically 32767 not 65535 or higher
+# notes  : Another for loop idiom: # for ithLine in {0 100 0} ; do done or { }
+# notes  : Use this idiom for logical OR or AND testing:
+#          if [[ $varA = 1 && ($varB = "t1" || $varC = "t2") ]]; then
+# notes  : syntax for logical operator tests:  if [[ $varA = 1 && ($varB = "t1" || $varC = "t2") ]]; then
+# notes  : Recap of basic array syntax:  printf "line 1: %s\n" "${aryLines[0]}"
+#          printf "line 5: %s\n" "${aryLines[4]}"   ...or... to fetch all lines...  echo "${aryLines[@]}"
+#
+# Set hardstop defaults
+DATETIME_STAMP=`date +"%Y-%m-%dT%H%M%S"`
+STRT_SEC=`date +"%s"`
+BASH_VERS=$BASH_VERSION
+if [ ${BASH_VERS:0:1} == "4" ] ; then
+	IS_BASH4=1
+	# echo "Check Bash 4:" $IS_BASH4
+fi
+# assign default prefix string for output path
+PATH_PREFIX="Testdata_"
+USER_ASSIGNED=""
+DFLT_N_FILES=$N_FILES
+N_RNDCHAR=32
+N_FILES=10
+N_LINES=100
+DFLT_N_FILES=$N_FILES
+FORCE_RND_IDX=0
+PATH_EXT="csv"
+# optional, path to a file containing K strings to randomly select from, in place of
+# randomly generated strings of specified length.
+MATERIAL_PATH=""
+seedTextLinesAry=""
+N_SEED_MATERIAL=0
+CH_WIDTH=16
+#
+if [ "$#" -ge 1 ] ; then
+	if [[ $# -eq 1 && "$1" == "?" ]] ; then
+		echo "gen_randdata.shl usage: <nFiles> <nLinesPerFile> <nCharactersPerRecord> <FORCE_RANDOM_REC_INDICES{0|1} {MATERIAL_PATH}"
+		echo "Defaults are: N. files " $N_FILES " Lines: " $N_LINES " nCharactersPerRecord: " $N_RNDCHAR
+		exit -1
+	fi
+  N_FILES=$1
+  USER_ASSIGNED=True
+fi
+if [ "$#" -ge 2 ] ; then
+  N_LINES=$2
+  USER_ASSIGNED=True
+fi
+if [ "$#" -ge 3 ] ; then
+  N_RNDCHAR=$3
+  USER_ASSIGNED=True
+fi
+if [ "$#" -ge 4 ] ; then
+	chkArg=$4
+	# Lower-case the string to simplify parsing (Bash v4.x specific)
+	# allow user flexibility, specifing enabling directive via any: {YES|Yes|yes|OK|Ok|ok|TRUE|True|true|1}
+	chkArg="${chkArg,,}"
+	if [[ $chkArg = 'yes' || $chkArg = 'ok' || $chkArg = 'true' || $chkArg -ge 1 ]] ; then
+      FORCE_RND_IDX=1
+    else
+      FORCE_RND_IDX=0
+    fi
+     USER_ASSIGNED=True
+fi
+if [ "$#" -ge 5 ] ; then
+  MATERIAL_PATH=$5
+  if [ -f $MATERIAL_PATH ] ; then
+  	# create Bash array named 'seedTextLines' from contents of file
+  	# this works in Bash 3.x. If Bash v4.x available we could use 'readarray'
+  	if [ ${BASH_VERS:0:1} == "4" ] ; then
+  	  # IFS=$'\n' read -d '' -r -a seedTextLinesAry < $MATERIAL_PATH
+      readarray seedTextLinesAry < "$MATERIAL_PATH"
+      echo "seed material path used: " $MATERIAL_PATH
+    else
+      echo "sorry: this script requires readarray and so only works with Bash v4.x and up"
+      exit -1
+    fi
+    USER_ASSIGNED=True
+  fi
+fi
+
+# Store n. of records in aray
+N_SEED_MATERIAL=${#seedTextLinesAry[@]}
+
+echo "Task at " `pwd` " started " $DATETIME_STAMP " generating " $N_FILES " files"
+echo "each file containing " $N_LINES " lines. Using Bash version " $BASH_VERS
+#
+if [ ${#USER_ASSIGNED} -ge 1 ] ; then
+ echo "User assigned no. of files to generate         : " $N_FILES
+ echo "User assigned no. of lines per file to generate: " $N_LINES
+ echo "User assigned no. of characters per record     : " $N_RNDCHAR
+else
+ echo "Default no. of files to generate          : " $N_FILES
+ echo "Default no. of lines per file to generate : " $N_LINES
+ echo "Default no. of characters per record      : " $N_RNDCHAR
+fi
+if [ $FORCE_RND_IDX -eq 1 ] ; then
+    echo "Forcing use of random record indices"
+fi
+
+#  Example: for ((number=1;number < 100;number++)) {  <commands> } 
+k=0
+
+for ((ithFile=1;ithFile <=$N_FILES;ithFile++))
+{
+ k=$(($k + 1))
+ IDX=`printf "%-8.8d" $ithFile`
+ OUTPUT_PATH=$PATH_PREFIX$IDX."$PATH_EXT"
+ if [ -f $OUTPUT_PATH ] ; then
+ 	rm -f $OUTPUT_PATH
+ fi
+ touch $OUTPUT_PATH
+ echo $ithFile " creating file: " $OUTPUT_PATH " with " $N_LINES " lines"
+  REC_ID=$k
+  for ((ithLine=1;ithLine <= $N_LINES;ithLine++))
+  {
+  	# refresh the datetime stamp
+  	DATETIME_STAMP=`date +"%Y-%m-%dT%H%M%S"`
+  	# start by producing two random integers to provide to the record
+    VALUE_A=`echo $((1 + RANDOM % 32767))`
+    VALUE_B=`echo $((1 + RANDOM % 32767))`
+    # pre-emptively fetch a random string from material text file if available
+    if [[ -f $MATERIAL_PATH && ${#seedTextLinesAry[@]} -ge 1 ]] ; then
+    	# SELECTED_STRING=${seedTextLinesAry[RANDOM%${#seedTextLinesAry[@]}]}  ..picks only 1 char out
+    	SELECTED_STRING=${seedTextLinesAry[RANDOM%${#seedTextLinesAry[@]}]}
+    	# echo "MATERIAL CHOICE METHOD PRODUCED: "  $SELECTED_STRING
+    else
+        SELECTED_STRING=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w $N_RNDCHAR | head -n 1) 
+        # echo "RAND-CHAR METHOD PRODUCED: "  $SELECTED_STRING
+    fi
+    # If only one output file specified, OR nFiles equals a default, then randomly vary the record index
+    if [[ $N_FILES -eq 1 || $N_FILES -eq $DFLT_N_FILES || $FORCE_RND_IDX -ge 1 ]] ; then
+    	REC_ID=`echo $((1 + RANDOM % 32767))`
+    fi
+    printf "%d,%s,%s,%-8.8d,%d\n" $REC_ID $DATETIME_STAMP $SELECTED_STRING $VALUE_A $VALUE_B  >> $OUTPUT_PATH
+  }
+}
+#
+TIMEDATE_STAMP=`date +"%Y-%m-%dT%H%M%S"`
+ENDI_SEC=`date +"%s"`
+ELAP_SEC=$((ENDI_SEC-STRT_SEC))
+echo ""
+echo "Task " $0 " completed at " $TIMEDATE_STAMP " on " $HOSTNAME " requiring " $ELAP_SEC " seconds"
+echo "generating " $N_FILES " files each with " $N_LINES " lines"
+echo ""
+ls -l "$PATH_PREFIX"*
+#
