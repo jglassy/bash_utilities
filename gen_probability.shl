@@ -1,0 +1,22 @@
+#!/bin/bash
+# script: gen_probability.shl
+# revised: 2016-10-25T12:10:00
+# author : Joe Glassy, Lupine Logic Inc.
+# purpose: Bash script to generate a random number, showing several
+#          different methods (Bash,awk,python)
+#
+# source: URL: http://www.tldp.org/LDP/abs/html/randomvar.html
+#  random2.sh: Returns a pseudorandom number in the range 0 - 1,
+#+ to 6 decimal places. For example: 0.822725
+#  Uses the awk rand() function.
+AWKSCRIPT=' { srand(); print rand() } '
+#           Command(s)/parameters passed to awk
+# Note that srand() reseeds awk's random number generator.
+echo -n "Random number between 0 and 1 = "
+echo | awk "$AWKSCRIPT"
+# Illustrate a single-line python method
+python -c "import sys,random; print random.random()"
+# Illustrate a Bash method
+RAND_PROB=`echo 10k $RANDOM 32767 /p | dc`
+# verify: what happens if you leave out the 'echo'?
+exit 0

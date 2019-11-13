@@ -1,0 +1,28 @@
+#! /bin/bash
+# script : gen_randprob.shl
+# revised: 2016-10-25T12:19:00
+# author : Joe Glassy
+# purpose: Illustrate how to generate a uniformly random probability {0.0<=r<=1.0}
+#          in Bash, using several methods: Bash,Python,awk
+#
+# notes  : reminder on syntax for a Bash single line for loop:
+#          for i in {1..1000}; do echo $BASH_PROB; done
+# notes  : Kernel provided example: od -An -N2 -i /dev/random
+#
+# Using Bash and shell primitives. This is approximate, not really well
+#  conditioned statistically
+BASH_PROB=`echo 10k $RANDOM 32767 /p | dc`
+echo "Bash generated probabillity: " $BASH_PROB 
+# Using Z shell (if available)
+ZSH_PROB=`echo 'print $(($RANDOM/32767.))'|zsh`
+echo "ZSH generated probability: " $ZSH_PROB
+# ZSH_PROB=`echo 'print $(($RANDOM/32767.))'|zsh` ; echo $ZSH_PROB
+# echo '$(($RANDOM/32767.))'|zsh
+# Using Awk
+AWK_PROB=$(awk 'BEGIN {srand();printf "%.8f",rand()'})
+echo "Awk generated probability: "  $AWK_PROB
+# using Python
+PY_PROB=`python -c "import random;print random.random()"`
+echo "Python generated probability: "  $PY_PROB
+
+# done
